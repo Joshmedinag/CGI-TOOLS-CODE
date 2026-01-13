@@ -1,0 +1,58 @@
+import maya.cmds as cmds
+import maya.api.OpenMaya as om
+
+def place_snow_block_on_surface(offset=0.02):
+    sel = cmds.ls(sl=True)
+    if len(sel) != 2:
+        cmds.error("Select SNOW BLOCK first, then ICE SURFACE")
+        return
+
+    snow_block = sel[0]
+    surface = sel[1]
+
+    # Duplicate snow block
+    new_block = cmds.duplicate(snow_block, rr=True, name=f"{snow_block}_PLACED")[0]
+
+    # Get world position of original block
+    pos = cmds.xform(snow_block, q=True, ws=True, t=True)
+
+    # Get surface shape
+    shape = cmds.listRelatives(surface, s=True, ni=True)[0]
+    sel_list = om.MSelectionList()
+    sel_list.add(shape)
+    dag_path = sel_list.getDagPath(0)
+    mesh_fn = om.MFnMesh(dag_path)
+
+    # Closest point on surface
+    point = om.MPoint(pos[0], pos[1], pos[2])
+    closest_point, face_id = mesh_fn.getClosestPoint(point, om.MSpace.kWorld)
+
+    # Normal at closest point
+    normal = mesh_fn.getPolygonNormal(face_id, om.MSpace.kWorld)
+    normal.normalize()
+
+    # Move block to surface + offset
+    final_pos = closest_point + (normal * offset)
+    cmds.xform(new_block, ws=True, t=(final_pos.x, final_pos.y, final_pos.z))
+
+    # Align block to surface normal
+    up = om.MVector(0, 1, 0)
+    rot_axis = up ^ normal
+    angle = up.angle(normal)
+
+    if rot_axis.length() > 0.0001:
+        rot_axis.normalize()
+        quat = om.MQuaternion(angle, rot_axis)
+        euler = quat.asEulerRotation()
+        cmds.xform(
+            new_block,
+            ws=True,
+            rotation=(
+                om.MAngle(euler.x).asDegrees(),
+                om.MAngle(euler.y).asDegrees(),
+                om.MAngle(euler.z).asDegrees()
+            )
+        )
+
+    cmds.select(new_block)
+    return new_block
