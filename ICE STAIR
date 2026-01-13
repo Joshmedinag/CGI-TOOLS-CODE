@@ -1,0 +1,149 @@
+import maya.cmds as cmds
+
+def make_corner_block(
+    name="ESQUINA64",
+    width=8.0, depth=8.0, height=10.0,          # base size
+    top_lip_height=0.8, top_lip_inset=0.5,      # top frame / lip
+    bevel_frac=0.08, bevel_segments=2,          # soft bevel
+    spike_count_u=8, spike_count_v=8,            # spikes per side
+    spike_height=1.1, spike_depth=0.55           # spike size
+):
+    # Delete existing object if it already exists
+    if cmds.objExists(name):
+        cmds.delete(name)
+
+    # 1) Base block
+    block, blockShape = cmds.polyCube(
+        w=width, d=depth, h=height,
+        sx=1, sy=1, sz=1,
+        name=name
+    )
+    cmds.makeIdentity(block, apply=True, t=1, r=1, s=1, n=0)
+
+    # 2) Bevel all outer edges (to avoid perfect sharp edges)
+    all_edges = cmds.ls(f"{block}.e[*]", fl=True)
+    cmds.polyBevel3(
+        all_edges,
+        fraction=bevel_frac,
+        segments=bevel_segments,
+        chamfer=1,
+        offsetAsFraction=1,
+        depth=1,
+        mitering=0,
+        smoothingAngle=30
+    )
+
+    # 3) Create the top lip/frame
+    # Find the highest face (positive Y normal)
+    faces = cmds.ls(f"{block}.f[*]", fl=True)
+    top_face = None
+    highest_y = -1e9
+
+    for f in faces:
+        center = cmds.xform(f, q=True, ws=True, t=True)
+        if center and center[1] > highest_y:
+            highest_y = center[1]
+            top_face = f
+
+    # Inset the top face
+    cmds.polyExtrudeFacet(
+        top_face,
+        ltz=0,
+        ls=(1 - (top_lip_inset / max(width, depth)))
+    )
+
+    # Push the lip downward slightly
+    cmds.polyExtrudeFacet(
+        top_face,
+        lty=-top_lip_height
+    )
+
+    # 4) Ice spikes (teeth) around the block
+    spikes_grp = cmds.group(em=True, name=f"{name}_spikes_GRP")
+
+    def create_spike():
+        spike, _ = cmds.polyCone(
+            r=spike_depth,
+            h=spike_height,
+            sx=3, sy=1, sz=0,
+            ax=(0, 1, 0),
+            name=f"{name}_spike#"
+        )
+        cmds.polySoftEdge(spike, a=0)
+        cmds.xform(spike, ws=True, piv=(0, spike_height / 2.0, 0))
+        return spike
+
+    half_w = width * 0.5
+    half_d = depth * 0.5
+    top_y  = (height * 0.5) - (top_lip_height * 0.25)
+
+    u_step = width / float(max(1, spike_count_u))
+    v_step = depth / float(max(1, spike_count_v))
+
+    # +Z side
+    for i in range(spike_count_u):
+        spike = create_spike()
+        x = -half_w + (i + 0.5) * u_step
+        z = half_d + (spike_depth * 0.15)
+        cmds.xform(spike, ws=True, t=(x, top_y, z), ro=(180, 0, 0))
+        cmds.parent(spike, spikes_grp)
+
+    # -Z side
+    for i in range(spike_count_u):
+        spike = create_spike()
+        x = -half_w + (i + 0.5) * u_step
+        z = -half_d - (spike_depth * 0.15)
+        cmds.xform(spike, ws=True, t=(x, top_y, z), ro=(180, 180, 0))
+        cmds.parent(spike, spikes_grp)
+
+    # +X side
+    for i in range(spike_count_v):
+        spike = create_spike()
+        x = half_w + (spike_depth * 0.15)
+        z = -half_d + (i + 0.5) * v_step
+        cmds.xform(spike, ws=True, t=(x, top_y, z), ro=(180, -90, 0))
+        cmds.parent(spike, spikes_grp)
+
+    # -X side
+    for i in range(spike_count_v):
+        spike = create_spike()
+        x = -half_w - (spike_depth * 0.15)
+        z = -half_d + (i + 0.5) * v_step
+        cmds.xform(spike, ws=True, t=(x, top_y, z), ro=(180, 90, 0))
+        cmds.parent(spike, spikes_grp)
+
+    # 5) Combine everything into a single mesh
+    final_mesh = cmds.polyUnite(
+        block,
+        spikes_grp,
+        name=f"{name}_GEO",
+        ch=False
+    )[0]
+
+    cmds.delete(final_mesh, constructionHistory=True)
+    cmds.polyMergeVertex(final_mesh, d=0.001, am=True, ch=False)
+
+    if cmds.objExists(block):
+        cmds.delete(block)
+    if cmds.objExists(spikes_grp):
+        cmds.delete(spikes_grp)
+
+    cmds.polySoftEdge(final_mesh, a=45)
+    cmds.select(final_mesh)
+
+    return final_mesh
+
+make_corner_block(
+    name="CORNER64",
+    width=8,
+    depth=8,
+    height=10,
+    top_lip_height=0.9,
+    top_lip_inset=0.6,
+    bevel_frac=0.06,
+    bevel_segments=2,
+    spike_count_u=9,
+    spike_count_v=9,
+    spike_height=1.2,
+    spike_depth=0.55
+)
