@@ -1,0 +1,121 @@
+import maya.cmds as cmds
+import random
+
+def create_icicle_triangles_from_bbox(
+    mesh=None,
+    side="front",
+    count=18,
+    height=0.35,
+    width=0.18,
+    depth=0.12,
+    y_offset=0.02,
+    z_offset=0.0,
+    random_scale=0.25,
+    random_slide=0.08,
+    seed=7,
+    name_prefix="ICICLE_TRI"
+):
+    """
+    Creates triangular 'icicles' (3-sided cones) along the top edge of a mesh,
+    using the mesh bounding box.
+
+    side: 'front' (zMax) or 'back' (zMin) or 'left' (xMin) or 'right' (xMax)
+    count: how many icicles
+    height: icicle length (downwards)
+    width/depth: icicle thickness
+    y_offset: how far below the top edge to start
+    z_offset: extra push outward (helps avoid intersection)
+    random_scale: +/- scale variation
+    random_slide: +/- spacing jitter
+    """
+
+    if mesh is None:
+        sel = cmds.ls(sl=True, long=True) or []
+        if not sel:
+            raise RuntimeError("Select a mesh transform (your block) first.")
+        mesh = sel[0]
+
+    # Get world bounding box
+    bb = cmds.exactWorldBoundingBox(mesh)
+    xMin, yMin, zMin, xMax, yMax, zMax = bb
+
+    random.seed(seed)
+
+    # Decide along which axis to distribute (usually X)
+    # We'll distribute along X by default, and place on chosen side.
+    x_start = xMin + width * 0.6
+    x_end   = xMax - width * 0.6
+    if count <= 1:
+        xs = [(x_start + x_end) * 0.5]
+    else:
+        step = (x_end - x_start) / float(count - 1)
+        xs = [x_start + i * step for i in range(count)]
+
+    # Determine placement coordinate on the chosen side
+    if side == "front":
+        side_coord = zMax + z_offset
+        rot = (180, 0, 0)  # point down
+        axis = "z"
+    elif side == "back":
+        side_coord = zMin - z_offset
+        rot = (180, 0, 0)
+        axis = "z"
+    elif side == "left":
+        side_coord = xMin - z_offset
+        rot = (180, 90, 0)
+        axis = "x"
+    elif side == "right":
+        side_coord = xMax + z_offset
+        rot = (180, 90, 0)
+        axis = "x"
+    else:
+        raise RuntimeError("side must be: front/back/left/right")
+
+    created = []
+    grp = cmds.group(em=True, name=f"{name_prefix}_GRP")
+
+    for i, x in enumerate(xs):
+        # jitter spacing
+        x_j = x + random.uniform(-random_slide, random_slide)
+
+        # Create a 3-sided cone (triangular spike)
+        tri = cmds.polyCone(
+            r=0.5, h=1.0, sx=3, sy=1,
+            name=f"{name_prefix}_{i:02d}"
+        )[0]
+
+        # Scale to desired size
+        s_var = 1.0 + random.uniform(-random_scale, random_scale)
+        cmds.setAttr(tri + ".scaleX", width * s_var)
+        cmds.setAttr(tri + ".scaleZ", depth * s_var)
+        cmds.setAttr(tri + ".scaleY", height * s_var)
+
+        # Rotate so it points downward
+        cmds.xform(tri, ws=True, ro=rot)
+
+        # Position it at the top edge, slightly below yMax
+        y_pos = yMax - y_offset
+
+        if axis == "z":
+            cmds.xform(tri, ws=True, t=(x_j, y_pos, side_coord))
+        else:  # axis == "x"
+            # distribute along Z if you want for left/right cases
+            z_mid = (zMin + zMax) * 0.5
+            cmds.xform(tri, ws=True, t=(side_coord, y_pos, z_mid + (i - count/2.0) * (depth * 1.2)))
+
+        # Parent to group
+        cmds.parent(tri, grp)
+        created.append(tri)
+
+    return grp, created
+
+create_icicle_triangles_from_bbox(
+    side="front",   # cambia a 'back', 'left', 'right' según tu pared
+    count=22,
+    height=0.45,
+    width=0.16,
+    depth=0.12,
+    y_offset=0.03,
+    z_offset=0.02,
+    seed=10
+)
