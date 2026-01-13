@@ -1,0 +1,67 @@
+import maya.cmds as cmds
+
+def make_snow_top_block(
+    name="NIEVE4",
+    width=4.0, depth=4.0, thickness=0.25,     # slab size (like your screenshot: Y very small)
+    bevel_fraction=0.06, bevel_segments=2,     # soft edges
+    top_inset=0.12, top_frame_drop=0.03,       # top border (inset + slight drop)
+    soften_angle=45
+):
+    # Delete if exists
+    if cmds.objExists(name):
+        cmds.delete(name)
+
+    # 1) Base slab
+    slab = cmds.polyCube(w=width, d=depth, h=thickness, sx=1, sy=1, sz=1, name=name)[0]
+    cmds.makeIdentity(slab, apply=True, t=1, r=1, s=1, n=0)
+
+    # 2) Bevel all edges (rounded look)
+    edges = cmds.ls(f"{slab}.e[*]", fl=True)
+    cmds.polyBevel3(
+        edges,
+        fraction=bevel_fraction,
+        segments=bevel_segments,
+        chamfer=1,
+        offsetAsFraction=1,
+        depth=1,
+        mitering=0,
+        smoothingAngle=30
+    )
+
+    # 3) Find top face robustly (highest face center Y)
+    faces = cmds.ls(f"{slab}.f[*]", fl=True)
+    top_face = None
+    highest_y = -1e9
+    for f in faces:
+        ctr = cmds.xform(f, q=True, ws=True, t=True)
+        if ctr and ctr[1] > highest_y:
+            highest_y = ctr[1]
+            top_face = f
+
+    # 4) Create a subtle top frame (inset + tiny drop)
+    #    Note: polyExtrudeFacet uses 'ls' as a scale factor. We'll compute a reasonable one.
+    #    If top_inset is 0.12 and width is 4 => frame looks like your screenshot.
+    inset_scale = 1.0 - (top_inset / max(width, depth))
+    inset_scale = max(0.01, min(0.99, inset_scale))
+
+    cmds.polyExtrudeFacet(top_face, ltz=0, ls=inset_scale)   # inset
+    cmds.polyExtrudeFacet(top_face, lty=-abs(top_frame_drop)) # tiny drop
+
+    # 5) Soften normals
+    cmds.polySoftEdge(slab, a=soften_angle)
+
+    cmds.select(slab)
+    return slab
+
+
+# Example (very close to your "NIEVE4" look)
+make_snow_top_block(
+    name="NIEVE4",
+    width=4.0,
+    depth=4.0,
+    thickness=0.25,
+    bevel_fraction=0.06,
+    bevel_segments=2,
+    top_inset=0.12,
+    top_frame_drop=0.03
+)
